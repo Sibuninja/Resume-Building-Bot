@@ -1,83 +1,186 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resume Chatbot</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <script>
-        document.addEventListener("DOMContentLoaded", function () {
-    const inputField = document.getElementById("userInput");  // Ensure correct ID
-    const sendButton = document.getElementById("send-btn");  // Ensure button exists
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Resume Chatbot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <style>
+    /* small helper styles for chips and disabled button */
+    .chips { margin: 8px 0; display:flex; gap:8px; flex-wrap:wrap; }
+    .chip { padding:6px 10px; background:rgb(14, 14, 14); border-radius:16px; cursor:pointer; user-select:none; font-size:0.9rem; }
+    .chip:hover { background:#dde; }
+    .user-message, .bot-message { margin:6px 0; padding:8px; border-radius:6px; }
+    .user-message { background:#060606; align-self:flex-end; }
+    .bot-message { background:#111010; }
+    .chat-box { display:flex; flex-direction:column; gap:6px; max-height:60vh; overflow:auto; padding:12px; }
+    .input-container { display:flex; gap:8px; margin-top:12px; }
+    button:disabled { opacity:0.6; cursor:not-allowed; }
+  </style>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const inputField = document.getElementById("userInput");
+      const sendButton = document.getElementById("send-btn");
+      const chatBox = document.getElementById("chat");
+      const generateArea = document.getElementById("generate-area");
 
-    if (inputField && sendButton) {
-        inputField.addEventListener("keypress", function (event) {
-            console.log("Key pressed:", event.key);  // Debugging output
-            if (event.key === "Enter") {
-                event.preventDefault();
-                sendMessage();  // Call the function directly instead of clicking the button
+      // Escape text to avoid XSS when adding user-provided text to DOM
+      function escapeHtml(unsafe) {
+        return (""+unsafe)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function appendMessage(text, cls) {
+        const p = document.createElement("p");
+        p.className = cls;
+        p.innerHTML = `<b>${cls === 'user-message' ? 'You:' : 'Bot:'}</b> ${escapeHtml(text)}`;
+        chatBox.appendChild(p);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+
+      function appendRawNode(node) {
+        chatBox.appendChild(node);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+
+      // Clickable chip that appends the chip text into input (comma-separated)
+      function createChip(text) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = text;
+        chip.addEventListener("click", () => {
+          // Append to input, keep comma separation clean
+          const current = inputField.value.trim();
+          if (!current) {
+            inputField.value = text;
+          } else {
+            // avoid duplicate entries if already present
+            const parts = current.split(",").map(s => s.trim()).filter(Boolean);
+            if (!parts.includes(text)) {
+              parts.push(text);
+              inputField.value = parts.join(", ");
             }
+          }
+          inputField.focus();
         });
-    } else {
-        console.error("Error: Input field or send button not found.");
-    }
-});
+        return chip;
+      }
 
-function sendMessage() {
-    let userInput = document.getElementById("userInput").value;
-    if (!userInput.trim()) return;
+      async function sendMessage() {
+        const raw = inputField.value;
+        if (!raw || !raw.trim()) return;
+        sendButton.disabled = true;
+        sendButton.textContent = "Sending...";
 
-    let chatBox = document.getElementById("chat");
-    chatBox.innerHTML += `<p class="user-message"><b>You:</b> ${userInput}</p>`;
-    document.getElementById("userInput").value = "";
-    chatBox.scrollTop = chatBox.scrollHeight;
+        appendMessage(raw, "user-message");
+        inputField.value = "";
 
-    fetch('/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userInput })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.redirect) {
+        try {
+          const res = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: raw })
+          });
+          if (!res.ok) {
+            appendMessage("Server error: " + res.statusText, "bot-message");
+            return;
+          }
+          const data = await res.json();
+
+          // clear any previous subskills display
+          const prev = document.getElementById("subskills-container");
+          if (prev) prev.remove();
+
+          // Remove previous generate button area
+          generateArea.innerHTML = "";
+
+          // Display question from bot
+          if (data.question) {
+            appendMessage(data.question, "bot-message");
+          }
+
+          // Display subskills as clickable chips if provided
+          if (Array.isArray(data.subskills) && data.subskills.length) {
+            const container = document.createElement("div");
+            container.id = "subskills-container";
+            container.className = "chips";
+            const hint = document.createElement("div");
+            hint.style.fontSize = "0.9rem";
+            hint.style.marginBottom = "6px";
+            hint.textContent = "Click a subskill to add it to the input (you can also type or edit):";
+            appendRawNode(hint);
+
+            data.subskills.forEach(skill => {
+              const chip = createChip(skill);
+              container.appendChild(chip);
+            });
+            appendRawNode(container);
+          }
+
+          // If final step - show a Download Resume button instead of a raw link
+          if (data.question && data.question.toLowerCase().includes("generating your resume")) {
+            // show a button that opens /generate in a new tab
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.textContent = "Download Resume";
+            btn.addEventListener("click", () => {
+              // open in new tab so the file is returned / downloaded
+              window.open('/generate', '_blank');
+            });
+            generateArea.appendChild(btn);
+            // helpful note also
+            const note = document.createElement("div");
+            note.style.fontSize = "0.85rem";
+            note.style.marginTop = "6px";
+            generateArea.appendChild(note);
+          }
+
+          // if server supplied redirect (rare), follow it
+          if (data.redirect) {
             window.location.href = data.redirect;
-        } else {
-            if(data.question=="All done! Generating your resume now...") {
-                
-                chatBox.innerHTML += `<p class="bot-message"><b>Bot:</b> ${data.question}</p><a href="\generate">generate</a>`;
-
-            }else
-                chatBox.innerHTML += `<p class="bot-message"><b>Bot:</b> ${data.question}</p>`;
-            
-            // Check if subskills exist and display them as a list
-            if (data.subskills && Array.isArray(data.subskills)) {
-                let subskillsHTML = "<ul>";
-                data.subskills.forEach(skill => {
-                    subskillsHTML += `<li>${skill}</li>`;
-                });
-                subskillsHTML += "</ul>";
-                chatBox.innerHTML += subskillsHTML;
-            }
-
-            chatBox.scrollTop = chatBox.scrollHeight;
+          }
+        } catch (err) {
+          console.error(err);
+          appendMessage("Network error. Please try again.", "bot-message");
+        } finally {
+          sendButton.disabled = false;
+          sendButton.textContent = "Send";
         }
-    });
-}
+      }
 
-        
-    </script>
+      // Enter key sends message
+      inputField.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      // Send button
+      sendButton.addEventListener("click", (e) => {
+        e.preventDefault();
+        sendMessage();
+      });
+    });
+  </script>
 </head>
 <body>
-    <div class="chat-container">
-        <h1>Resume Chatbot</h1>
-        <div id="chat" class="chat-box">
-            <p class="bot-message"><b>Bot:</b> Hi there! I'm ResumeBot. Let's build your resume! What is your name?</p>
-        </div>
-        <div class="input-container">
-            <input type="text" id="userInput" placeholder="Type your message...">
-<button id="send-btn" onclick="sendMessage()">Send</button>
-
-        </div>
+  <div class="chat-container" style="max-width:800px;margin:20px auto;padding:12px;">
+    <h1>Resume Chatbot</h1>
+    <div id="chat" class="chat-box" aria-live="polite">
+      <p class="bot-message"><b>Bot:</b> Hi there! I'm ResumeBot. Let's build your resume! What is your name?</p>
     </div>
+
+    <div id="generate-area" style="margin-top:10px;"></div>
+
+    <div class="input-container">
+      <input type="text" id="userInput" placeholder="Type your message..." style="flex:1;padding:8px;border-radius:6px;border:1px solid #ccc;">
+      <button id="send-btn" style="padding:8px 12px;border-radius:6px;">Send</button>
+    </div>
+  </div>
 </body>
 </html>
