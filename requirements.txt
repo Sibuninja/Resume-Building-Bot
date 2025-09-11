@@ -1,0 +1,6 @@
+flask
+groq
+fpdf
+pdfkit
+python-dotenv
+jinja2
