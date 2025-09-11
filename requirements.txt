@@ -4,3 +4,4 @@ fpdf
 pdfkit
 python-dotenv
 jinja2
+reportlab
