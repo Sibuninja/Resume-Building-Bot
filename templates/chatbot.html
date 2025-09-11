@@ -121,23 +121,52 @@
             appendRawNode(container);
           }
 
-          // If final step - show a Download Resume button instead of a raw link
+          // --- Replace the previous "If final step - show a Download Resume button ..." block with this:
           if (data.question && data.question.toLowerCase().includes("generating your resume")) {
-            // show a button that opens /generate in a new tab
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.textContent = "Download Resume";
-            btn.addEventListener("click", () => {
-              // open in new tab so the file is returned / downloaded
-              window.open('/generate', '_blank');
-            });
-            generateArea.appendChild(btn);
-            // helpful note also
-            const note = document.createElement("div");
-            note.style.fontSize = "0.85rem";
-            note.style.marginTop = "6px";
-            generateArea.appendChild(note);
-          }
+            // create a label + select for template choices
+            const label = document.createElement('div');
+            label.style.marginBottom = '6px';
+            label.textContent = "Choose resume template:";
+            generateArea.appendChild(label);
+
+            const select = document.createElement('select');
+            select.id = 'template-select';
+            select.style.padding = '6px';
+            select.style.marginRight = '8px';
+
+            const opts = [
+              {value:'modern', label:'Modern (visual)'},
+              {value:'classic', label:'Classic (serif)'},
+              {value:'ats', label:'ATS-Friendly (plain)'}
+            ];
+          opts.forEach(o => {
+            const option = document.createElement('option');
+            option.value = o.value;
+            option.textContent = o.label;
+            select.appendChild(option);
+          });
+          generateArea.appendChild(select);
+
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = 'Download Resume';
+          btn.style.padding = '8px 12px';
+          btn.addEventListener('click', () => {
+            const template = document.getElementById('template-select').value || 'modern';
+            // open /generate with template param in new tab
+            const url = '/generate?template=' + encodeURIComponent(template);
+            window.open(url, '_blank');
+        });
+        generateArea.appendChild(btn);
+
+        // helpful note
+        const note = document.createElement('div');
+        note.style.fontSize = '0.85rem';
+        note.style.marginTop = '8px';
+        note.textContent = "If server can't generate PDF, it will return an HTML file you can open in a browser or copy to Overleaf.";
+        generateArea.appendChild(note);
+      }
+
 
           // if server supplied redirect (rare), follow it
           if (data.redirect) {

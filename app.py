@@ -1,4 +1,6 @@
 # Import necessary libraries
+from templates import modern_template, classic_template, ats_template
+import pdfkit  
 from flask import Flask, render_template, request, jsonify, session, send_file
 import groq
 import json
@@ -434,13 +436,28 @@ def generate_resume():
     if not data:
         return "No resume data found in session. Start the chat to build your resume.", 400
 
+    # template from query param (or session fallback)
+    template = request.args.get('template', data.get('template', 'modern')).lower()
+    if template not in ('modern','classic','ats'):
+        template = 'modern'
+    # store choice (optional)
+    data['template'] = template
+    session['data'] = data
+
+    # pick html content
+    if template == 'modern':
+        html_content = modern_template(data)
+    elif template == 'classic':
+        html_content = classic_template(data)
+    else:
+        html_content = ats_template(data)
+
     static_dir = os.path.join(app.root_path, 'static')
     os.makedirs(static_dir, exist_ok=True)
-    user_name = data.get("name", "resume").strip().replace(" ", "_")
+    user_name = data.get('name', 'resume').strip().replace(' ', '_') or 'resume'
     ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    pdf_name = f"{user_name}_Resume_{ts}.pdf"
+    pdf_name = f"{user_name}_{template}_Resume_{ts}.pdf"
     pdf_path = os.path.join(static_dir, pdf_name)
-
 
     # Document setup
     doc = SimpleDocTemplate(
@@ -624,13 +641,18 @@ def generate_resume():
 
     # finalize PDF
     try:
-        doc.build(story)
-    except Exception as e:
-        print("ReportLab build error:", e)
-        traceback.print_exc()
-        return "Error generating PDF on server.", 500
+        #Using pdfkit
+        pdfkit.from_string(html_content, pdf_path)
 
-    return send_file(pdf_path, as_attachment=True, download_name=pdf_name)
+        return send_file(pdf_path, as_attachment=True, download_name=pdf_name)
+    
+    except Exception as e:
+        print("PDF generation failed:", e)
+        # fallback: write HTML file and return it for manual save/open
+        html_file = os.path.join(static_dir, f"{user_name}_{template}_{ts}.html")
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        return send_file(html_file, as_attachment=True, download_name=os.path.basename(html_file))
 
 
 if __name__ == '__main__':
